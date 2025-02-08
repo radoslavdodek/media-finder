@@ -1,4 +1,6 @@
-# MP3 Finder
+![icon.png](src/icon.png)
+
+# MP3 Finder 
 
 MP3 Finder is a Progressive Web Application (PWA) designed to assist users in locating MP3 links on websites.
 
