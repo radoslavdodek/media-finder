@@ -1,9 +1,9 @@
 # MP3 Finder
 
-A simple Progressive Web Application (PWA) that allows you to search for and download MP3 files from webpages.
+MP3 Finder is a Progressive Web Application (PWA) designed to assist users in locating MP3 links on websites.
 
 ![MP3 Finder App Preview](pictures/app-preview.png)
 
-You can install this app on your mobile device and use it as a sharing target.
+The application can be installed on mobile devices, enabling users to use it as a "Share" target for seamless integration and functionality.
 
 ![PWA Sharing Target](pictures/pwa-share-target.png)
