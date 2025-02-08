@@ -1,3 +1,3 @@
-# MP3 Extract
+# MP3 Finder
 
-![MP3 Extract App Preview](pictures/app-preview.png)
+![MP3 Finder App Preview](pictures/app-preview.png)
