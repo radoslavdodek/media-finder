@@ -102,10 +102,10 @@
 
             messageEl.textContent = '';
             if (mp3Links.length === 0) {
-                resultEl.textContent = 'No MP3 sources found on that page.';
+                resultEl.textContent = 'No MP3 links found on that page.';
             } else {
                 const subtitle = document.createElement('div');
-                subtitle.innerHTML = '<strong>MP3 sources found:</strong>';
+                subtitle.innerHTML = '<strong>MP3 links found:</strong>';
                 resultEl.appendChild(subtitle);
 
                 const ul = document.createElement('ul');
