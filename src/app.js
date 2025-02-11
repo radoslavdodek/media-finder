@@ -89,15 +89,14 @@
 
         try {
             const response = await fetch(
-                `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+                `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
                 {mode: 'cors'}
             );
-            const jsonResponse = await response.json();
-            const htmlText = jsonResponse.contents;
+            const rawResponse = await response.text();
 
             // Parse HTML string into a Document
             const parser = new DOMParser();
-            const doc = parser.parseFromString(htmlText, 'text/html');
+            const doc = parser.parseFromString(rawResponse, 'text/html');
             const mp3Links = findMp3Links(doc);
 
             messageEl.textContent = '';
