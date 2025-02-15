@@ -28,20 +28,28 @@
         return match ? match[0] : null;
     };
 
-    /**
-     * Checks if a URL ends with .mp3 and is likely valid.
-     * @param {string} url
-     * @returns {boolean}
-     */
     const isMp3Link = (url) => {
-        return extractUrlFromText(url) && url.toLowerCase().endsWith('.mp3');
+        return extractUrlFromText(url) && (url.toLowerCase().endsWith('.mp3'));
+    };
+
+    const isMp4Link = (url) => {
+        return extractUrlFromText(url) && (url.toLowerCase().endsWith('.mp4'));
     };
 
     /**
-     * Finds MP3 links in the provided document by checking for audio elements and data attributes.
+     * Finds media links in the provided document by checking for audio/video elements and data attributes.
      * @param {Document} doc
-     * @returns {string[]} Array of MP3 URLs.
+     * @returns {string[]} Array of media file URLs.
      */
+    const findMediaLinks = (doc) => {
+        const urls = [];
+
+        urls.append(...findMp3Links(doc));
+        urls.append(...findMp4Links(doc));
+
+        return urls;
+    };
+
     const findMp3Links = (doc) => {
         const urls = [];
 
@@ -68,11 +76,39 @@
         });
 
         return urls;
-    };
+    }
+
+    const findMp4Links = (doc) => {
+        const urls = [];
+
+        // Look for <audio> source
+        const videoSource = doc.querySelector('audio source[type="video/mp4"]');
+        let mp4Url = videoSource?.getAttribute('src') ?? null;
+
+        if (!mp4Url) {
+            // If no <source> found, check if <video> has a 'src' directly
+            const videoTag = doc.querySelector('video[src]');
+            if (videoTag) mp4Url = videoTag.getAttribute('src');
+        }
+        if (mp4Url && isMp4Link(mp4Url)) {
+            urls.push(mp4Url);
+        }
+
+        // Look for elements with 'data-mp4' or 'data-source' attributes
+        const dataElements = doc.querySelectorAll('[data-mp4], [data-source]');
+        dataElements.forEach((element) => {
+            const dataUrl = element.getAttribute('data-mp4') || element.getAttribute('data-source');
+            if (dataUrl && isMp4Link(dataUrl)) {
+                urls.push(dataUrl);
+            }
+        });
+
+        return urls;
+    }
 
     /**
      * Handles form submission and fetches HTML content via a CORS proxy.
-     * Parses the content for MP3 links and displays results.
+     * Parses the content for media links and displays results.
      * @param {Event} event
      */
     const handleFormSubmit = async (event) => {
@@ -97,18 +133,18 @@
             // Parse HTML string into a Document
             const parser = new DOMParser();
             const doc = parser.parseFromString(rawResponse, 'text/html');
-            const mp3Links = findMp3Links(doc);
+            const mediaLinks = findMediaLinks(doc);
 
             messageEl.textContent = '';
-            if (mp3Links.length === 0) {
-                resultEl.textContent = 'No MP3 links found on that page.';
+            if (mediaLinks.length === 0) {
+                resultEl.textContent = 'No media links found on that page.';
             } else {
                 const subtitle = document.createElement('div');
-                subtitle.innerHTML = '<strong>MP3 links found:</strong>';
+                subtitle.innerHTML = '<strong>Media links found:</strong>';
                 resultEl.appendChild(subtitle);
 
                 const ul = document.createElement('ul');
-                mp3Links.forEach((link) => {
+                mediaLinks.forEach((link) => {
                     const li = document.createElement('li');
                     const anchor = document.createElement('a');
                     anchor.href = link;
