@@ -44,8 +44,8 @@
     const findMediaLinks = (doc) => {
         const urls = [];
 
-        urls.append(...findMp3Links(doc));
-        urls.append(...findMp4Links(doc));
+        urls.push(...findMp3Links(doc));
+        urls.push(...findMp4Links(doc));
 
         return urls;
     };
@@ -53,18 +53,23 @@
     const findMp3Links = (doc) => {
         const urls = [];
 
-        // Look for <audio> source
-        const audioSource = doc.querySelector('audio source[type="audio/mp3"]');
-        let mp3Url = audioSource?.getAttribute('src') ?? null;
+        // Look for all <audio> sources of type "audio/mp3"
+        const audioSources = doc.querySelectorAll('audio source[type="audio/mp3"]');
+        audioSources.forEach((audioSource) => {
+            const mp3Url = audioSource.getAttribute('src');
+            if (mp3Url && isMp3Link(mp3Url)) {
+                urls.push(mp3Url);
+            }
+        });
 
-        if (!mp3Url) {
-            // If no <source> found, check if <audio> has a 'src' directly
-            const audioTag = doc.querySelector('audio[src]');
-            if (audioTag) mp3Url = audioTag.getAttribute('src');
-        }
-        if (mp3Url && isMp3Link(mp3Url)) {
-            urls.push(mp3Url);
-        }
+        // Look for all <audio> tags with a 'src' attribute directly
+        const audioTags = doc.querySelectorAll('audio[src]');
+        audioTags.forEach((audioTag) => {
+            const mp3Url = audioTag.getAttribute('src');
+            if (mp3Url && isMp3Link(mp3Url)) {
+                urls.push(mp3Url);
+            }
+        });
 
         // Look for elements with 'data-mp3' or 'data-source' attributes
         const dataElements = doc.querySelectorAll('[data-mp3], [data-source]');
@@ -76,23 +81,28 @@
         });
 
         return urls;
-    }
+    };
 
     const findMp4Links = (doc) => {
         const urls = [];
 
-        // Look for <audio> source
-        const videoSource = doc.querySelector('audio source[type="video/mp4"]');
-        let mp4Url = videoSource?.getAttribute('src') ?? null;
+        // Look for all <video> sources
+        const videoSources = doc.querySelectorAll('video source[type="video/mp4"]');
+        videoSources.forEach((videoSource) => {
+            const mp4Url = videoSource.getAttribute('src');
+            if (mp4Url && isMp4Link(mp4Url)) {
+                urls.push(mp4Url);
+            }
+        });
 
-        if (!mp4Url) {
-            // If no <source> found, check if <video> has a 'src' directly
-            const videoTag = doc.querySelector('video[src]');
-            if (videoTag) mp4Url = videoTag.getAttribute('src');
-        }
-        if (mp4Url && isMp4Link(mp4Url)) {
-            urls.push(mp4Url);
-        }
+        // Look for all <video> tags with 'src' attributes directly
+        const videoTags = doc.querySelectorAll('video[src]');
+        videoTags.forEach((videoTag) => {
+            const mp4Url = videoTag.getAttribute('src');
+            if (mp4Url && isMp4Link(mp4Url)) {
+                urls.push(mp4Url);
+            }
+        });
 
         // Look for elements with 'data-mp4' or 'data-source' attributes
         const dataElements = doc.querySelectorAll('[data-mp4], [data-source]');
@@ -144,16 +154,45 @@
                 resultEl.appendChild(subtitle);
 
                 const ul = document.createElement('ul');
+
                 mediaLinks.forEach((link) => {
                     const li = document.createElement('li');
                     const anchor = document.createElement('a');
                     anchor.href = link;
                     anchor.target = '_blank';
                     anchor.rel = 'noopener noreferrer';
-                    anchor.textContent = link;
+
+                    // Extract the file name from the link
+                    const fileName = link.substring(link.lastIndexOf('/') + 1);
+
+                    // Determine the file extension
+                    const fileExtension = fileName.split('.').pop().toLowerCase();
+
+                    // Create a new `i` element for the icon
+                    const icon = document.createElement('i');
+
+                    // Add appropriate Font Awesome icon classes based on the file extension
+                    if (fileExtension === 'mp3') {
+                        icon.className = 'fas fa-music';  // Font Awesome music icon
+                    } else if (fileExtension === 'mp4') {
+                        icon.className = 'fas fa-video';  // Font Awesome video icon
+                    }
+
+                    // Apply additional styles to ensure the icon is visible in the dark theme
+                    icon.style.color = '#fff';
+                    icon.style.marginRight = '0.5em';
+
+                    // Add the CSS class to increase the size of the list item
+                    li.className = 'large-li';
+
+                    // Construct the list item
+                    li.appendChild(icon);
+                    anchor.textContent = fileName;
                     li.appendChild(anchor);
+
                     ul.appendChild(li);
                 });
+
                 resultEl.appendChild(ul);
             }
         } catch (error) {

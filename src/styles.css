@@ -103,11 +103,17 @@ button:active {
     color: #68aaf1;
 }
 
+.large-li {
+    padding: 10px;
+    line-height: 1.5em; /* Adjust the line-height as needed */
+}
+
 /* Responsive styling */
 @media (max-width: 480px) {
     h1 {
         font-size: 22px;
     }
+
     input[type='url'],
     button {
         height: 44px;

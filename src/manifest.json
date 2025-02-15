@@ -1,8 +1,8 @@
 {
   "lang": "en",
   "dir": "ltr",
-  "name": "MP3 Finder",
-  "short_name": "MP3Find",
+  "name": "Media Finder",
+  "short_name": "MediaFind",
   "icons": [
     {
       "src": "icon.png",
@@ -11,7 +11,7 @@
     }
   ],
   "scope": "./",
-  "id": "mp3finder",
+  "id": "mediafinder",
   "start_url": "./index.html",
   "display": "standalone",
   "share_target": {
