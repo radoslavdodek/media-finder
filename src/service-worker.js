@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mp3-finder-cache-v1';
+const CACHE_NAME = 'media-finder-cache-v1';
 const urlsToCache = [
   './',
   './index.html',
