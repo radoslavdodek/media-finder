@@ -29,11 +29,19 @@
     };
 
     const isMp3Link = (url) => {
-        return extractUrlFromText(url) && (url.toLowerCase().endsWith('.mp3'));
+        try {
+            return new URL(url).pathname.toLowerCase().endsWith('.mp3');
+        } catch {
+            return false;
+        }
     };
 
     const isMp4Link = (url) => {
-        return extractUrlFromText(url) && (url.toLowerCase().endsWith('.mp4'));
+        try {
+            return new URL(url).pathname.toLowerCase().endsWith('.mp4');
+        } catch {
+            return false;
+        }
     };
 
     /**
@@ -135,7 +143,7 @@
 
         try {
             const response = await fetch(
-                `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
                 {mode: 'cors'}
             );
             const rawResponse = await response.text();
