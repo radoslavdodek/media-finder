@@ -13,6 +13,7 @@ APP_DIR="/var/www/indek.eu"                   # absolute path on the server
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="${SCRIPT_DIR}/src"
+DEPLOY_STARTED_AT="$(date '+%Y-%m-%d %H:%M:%S')"
 
 print_step() { echo -e "\n\033[1;34m==> $1\033[0m"; }
 print_ok()   { echo -e "\033[1;32m    OK\033[0m"; }
@@ -49,4 +50,14 @@ ssh_run "
 print_ok
 
 # ---------------------------------------------------------------------------
+DEPLOY_FINISHED_AT="$(date '+%Y-%m-%d %H:%M:%S')"
 echo -e "\n\033[1;32mDeployment complete.\033[0m"
+echo
+echo "Summary"
+echo "-------"
+echo "  Server:     ${SSH_USER}@${SSH_HOST}:${SSH_PORT}"
+echo "  Remote dir: ${APP_DIR}"
+echo "  Source:     ${SOURCE_DIR}/"
+echo "  Started:    ${DEPLOY_STARTED_AT}"
+echo "  Finished:   ${DEPLOY_FINISHED_AT}"
+echo "  Steps:      connection, rsync sync, nginx reload"
