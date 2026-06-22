@@ -7,8 +7,8 @@ set -euo pipefail
 SSH_USER="ubuntu"
 SSH_HOST="HOST"
 SSH_PORT="22"
-SSH_KEY="KEY"   # e.g. ~/.ssh/id_ed25519 (leave empty to use default)
-APP_DIR="/var/www/indek.eu"                   # absolute path on the server
+SSH_KEY="KEY_FILE"   # e.g. ~/.ssh/id_ed25519 (leave empty to use default)
+APP_DIR="/var/www/indek.eu/media-finder"      # deploy into a subdirectory (not the site root)
 # ---------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,6 +49,25 @@ fi
 
 FILES_SYNCED="$(grep 'Transfer starting:' "$RSYNC_OUTPUT" | sed -E 's/.*: ([0-9]+) files.*/\1/' || true)"
 FILES_SYNCED="${FILES_SYNCED:-unknown}"
+print_ok
+
+# ---------------------------------------------------------------------------
+print_step "Installing nginx snippet for /media-finder/proxy (if present)"
+NGINX_SNIPPET="${SCRIPT_DIR}/nginx/media-finder.conf"
+if [[ -f "$NGINX_SNIPPET" ]]; then
+  rsync -avz \
+    -e "ssh ${SSH_OPTS}" \
+    "$NGINX_SNIPPET" "${SSH_USER}@${SSH_HOST}:/tmp/media-finder.conf"
+  ssh_run "
+    set -e
+    sudo mkdir -p /etc/nginx/snippets
+    if ! sudo cmp -s /tmp/media-finder.conf /etc/nginx/snippets/media-finder.conf 2>/dev/null; then
+      sudo cp /tmp/media-finder.conf /etc/nginx/snippets/media-finder.conf
+      echo 'Updated /etc/nginx/snippets/media-finder.conf'
+    fi
+    rm -f /tmp/media-finder.conf
+  "
+fi
 print_ok
 
 # ---------------------------------------------------------------------------

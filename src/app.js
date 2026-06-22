@@ -112,7 +112,7 @@
     };
 
     /**
-     * Fetches page HTML through a CORS proxy, trying fallbacks when one fails.
+     * Fetches page HTML through a proxy, trying same-origin first then public fallbacks.
      * @param {string} pageUrl
      * @returns {Promise<string>}
      */
@@ -120,8 +120,17 @@
         const encodedUrl = encodeURIComponent(pageUrl);
         const proxies = [
             {
+                name: 'same-origin',
+                buildUrl: () => {
+                    const proxyUrl = new URL('proxy', window.location.href);
+                    proxyUrl.search = `url=${pageUrl}`;
+                    return proxyUrl.href;
+                },
+                parseResponse: (text) => text,
+            },
+            {
                 name: 'corsproxy.io',
-                buildUrl: () => `https://corsproxy.io/?${encodedUrl}`,
+                buildUrl: () => `https://corsproxy.io/?url=${encodedUrl}`,
                 parseResponse: (text) => text,
             },
             {
@@ -148,6 +157,11 @@
             try {
                 const response = await fetch(proxy.buildUrl(), {mode: 'cors'});
                 const rawResponse = await response.text();
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
                 const html = proxy.parseResponse(rawResponse);
 
                 if (!looksLikeHtml(html)) {
@@ -157,7 +171,7 @@
                 return html;
             } catch (error) {
                 errors.push(`${proxy.name}: ${error.message}`);
-                console.warn(`CORS proxy "${proxy.name}" failed`, error);
+                console.warn(`Fetch proxy "${proxy.name}" failed`, error);
             }
         }
 
