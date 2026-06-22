@@ -7,6 +7,9 @@
     const messageEl = document.getElementById('message');
     const resultEl = document.getElementById('result');
 
+    const MP3_MIME_TYPES = new Set(['audio/mp3', 'audio/mpeg', 'audio/mpeg3']);
+    const MP4_MIME_TYPES = new Set(['video/mp4']);
+
     /**
      * Clears all child nodes of the target element.
      * @param {HTMLElement} element The element to be cleared.
@@ -28,6 +31,40 @@
         return match ? match[0] : null;
     };
 
+    /**
+     * Decodes common HTML entities in attribute values.
+     * @param {string} value
+     * @returns {string}
+     */
+    const decodeHtmlEntities = (value) => {
+        const textarea = document.createElement('textarea');
+        textarea.innerHTML = value;
+        return textarea.value;
+    };
+
+    /**
+     * Resolves a possibly relative URL against the page URL.
+     * @param {string} candidate
+     * @param {string} baseUrl
+     * @returns {string|null}
+     */
+    const resolveMediaUrl = (candidate, baseUrl) => {
+        if (!candidate) {
+            return null;
+        }
+
+        const cleaned = decodeHtmlEntities(candidate.trim());
+        if (!cleaned || cleaned.startsWith('data:') || cleaned.startsWith('blob:')) {
+            return null;
+        }
+
+        try {
+            return new URL(cleaned, baseUrl).href;
+        } catch {
+            return null;
+        }
+    };
+
     const isMp3Link = (url) => {
         try {
             return new URL(url).pathname.toLowerCase().endsWith('.mp3');
@@ -45,84 +82,190 @@
     };
 
     /**
+     * @param {Set<string>} urls
+     * @param {string|null} candidate
+     * @param {string} baseUrl
+     * @param {(url: string) => boolean} matcher
+     */
+    const addMediaUrl = (urls, candidate, baseUrl, matcher) => {
+        const resolved = resolveMediaUrl(candidate, baseUrl);
+        if (resolved && matcher(resolved)) {
+            urls.add(resolved);
+        }
+    };
+
+    /**
+     * @param {string} text
+     * @returns {boolean}
+     */
+    const looksLikeHtml = (text) => {
+        const trimmed = text.trim();
+        if (!trimmed) {
+            return false;
+        }
+
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+            return false;
+        }
+
+        return /<!doctype html|<html[\s>]|<body[\s>]|<audio[\s>]|<video[\s>]/i.test(trimmed);
+    };
+
+    /**
+     * Fetches page HTML through a CORS proxy, trying fallbacks when one fails.
+     * @param {string} pageUrl
+     * @returns {Promise<string>}
+     */
+    const fetchPageHtml = async (pageUrl) => {
+        const encodedUrl = encodeURIComponent(pageUrl);
+        const proxies = [
+            {
+                name: 'corsproxy.io',
+                buildUrl: () => `https://corsproxy.io/?${encodedUrl}`,
+                parseResponse: (text) => text,
+            },
+            {
+                name: 'allorigins',
+                buildUrl: () => `https://api.allorigins.win/get?url=${encodedUrl}`,
+                parseResponse: (text) => {
+                    const payload = JSON.parse(text);
+                    if (!payload.contents) {
+                        throw new Error('allorigins response did not include page contents');
+                    }
+                    return payload.contents;
+                },
+            },
+            {
+                name: 'codetabs',
+                buildUrl: () => `https://api.codetabs.com/v1/proxy?quest=${encodedUrl}`,
+                parseResponse: (text) => text,
+            },
+        ];
+
+        const errors = [];
+
+        for (const proxy of proxies) {
+            try {
+                const response = await fetch(proxy.buildUrl(), {mode: 'cors'});
+                const rawResponse = await response.text();
+                const html = proxy.parseResponse(rawResponse);
+
+                if (!looksLikeHtml(html)) {
+                    throw new Error('response did not look like HTML');
+                }
+
+                return html;
+            } catch (error) {
+                errors.push(`${proxy.name}: ${error.message}`);
+                console.warn(`CORS proxy "${proxy.name}" failed`, error);
+            }
+        }
+
+        throw new Error(`Could not fetch page HTML. ${errors.join(' | ')}`);
+    };
+
+    /**
+     * Finds direct media URLs embedded in raw HTML or script content.
+     * @param {string} rawHtml
+     * @param {string} baseUrl
+     * @returns {Set<string>}
+     */
+    const findMediaLinksInText = (rawHtml, baseUrl) => {
+        const urls = new Set();
+        const patterns = [
+            {regex: /https?:\/\/[^\s"'<>\\]+\.mp3\b/gi, matcher: isMp3Link},
+            {regex: /https?:\/\/[^\s"'<>\\]+\.mp4\b/gi, matcher: isMp4Link},
+        ];
+
+        patterns.forEach(({regex, matcher}) => {
+            const matches = rawHtml.match(regex) || [];
+            matches.forEach((match) => addMediaUrl(urls, match, baseUrl, matcher));
+        });
+
+        return urls;
+    };
+
+    /**
      * Finds media links in the provided document by checking for audio/video elements and data attributes.
      * @param {Document} doc
+     * @param {string} rawHtml
+     * @param {string} baseUrl
      * @returns {string[]} Array of media file URLs.
      */
-    const findMediaLinks = (doc) => {
-        const urls = [];
+    const findMediaLinks = (doc, rawHtml, baseUrl) => {
+        const urls = new Set();
 
-        urls.push(...findMp3Links(doc));
-        urls.push(...findMp4Links(doc));
+        findMp3Links(doc, baseUrl).forEach((url) => urls.add(url));
+        findMp4Links(doc, baseUrl).forEach((url) => urls.add(url));
+        findMediaLinksInText(rawHtml, baseUrl).forEach((url) => urls.add(url));
 
-        return urls;
+        return [...urls];
     };
 
-    const findMp3Links = (doc) => {
-        const urls = [];
+    const sourceMatchesMime = (type, allowedTypes) => {
+        if (!type) {
+            return true;
+        }
+        return allowedTypes.has(type.trim().toLowerCase());
+    };
 
-        // Look for all <audio> sources of type "audio/mp3"
-        const audioSources = doc.querySelectorAll('audio source[type="audio/mp3"]');
-        audioSources.forEach((audioSource) => {
-            const mp3Url = audioSource.getAttribute('src');
-            if (mp3Url && isMp3Link(mp3Url)) {
-                urls.push(mp3Url);
+    const findMp3Links = (doc, baseUrl) => {
+        const urls = new Set();
+
+        doc.querySelectorAll('audio source[src]').forEach((audioSource) => {
+            const type = audioSource.getAttribute('type');
+            if (!sourceMatchesMime(type, MP3_MIME_TYPES)) {
+                return;
             }
+            addMediaUrl(urls, audioSource.getAttribute('src'), baseUrl, isMp3Link);
         });
 
-        // Look for all <audio> tags with a 'src' attribute directly
-        const audioTags = doc.querySelectorAll('audio[src]');
-        audioTags.forEach((audioTag) => {
-            const mp3Url = audioTag.getAttribute('src');
-            if (mp3Url && isMp3Link(mp3Url)) {
-                urls.push(mp3Url);
-            }
+        doc.querySelectorAll('audio[src]').forEach((audioTag) => {
+            addMediaUrl(urls, audioTag.getAttribute('src'), baseUrl, isMp3Link);
         });
 
-        // Look for elements with 'data-mp3' or 'data-source' attributes
-        const dataElements = doc.querySelectorAll('[data-mp3], [data-source]');
-        dataElements.forEach((element) => {
+        doc.querySelectorAll('audio[data-append]').forEach((audioTag) => {
+            addMediaUrl(urls, audioTag.getAttribute('data-append'), baseUrl, isMp3Link);
+        });
+
+        doc.querySelectorAll('[data-mp3], [data-source]').forEach((element) => {
             const dataUrl = element.getAttribute('data-mp3') || element.getAttribute('data-source');
-            if (dataUrl && isMp3Link(dataUrl)) {
-                urls.push(dataUrl);
-            }
+            addMediaUrl(urls, dataUrl, baseUrl, isMp3Link);
         });
 
-        return urls;
+        doc.querySelectorAll('a[href], link[href]').forEach((element) => {
+            addMediaUrl(urls, element.getAttribute('href'), baseUrl, isMp3Link);
+        });
+
+        return [...urls];
     };
 
-    const findMp4Links = (doc) => {
-        const urls = [];
+    const findMp4Links = (doc, baseUrl) => {
+        const urls = new Set();
 
-        // Look for all <video> sources
-        const videoSources = doc.querySelectorAll('video source[type="video/mp4"]');
-        videoSources.forEach((videoSource) => {
-            const mp4Url = videoSource.getAttribute('src');
-            if (mp4Url && isMp4Link(mp4Url)) {
-                urls.push(mp4Url);
+        doc.querySelectorAll('video source[src]').forEach((videoSource) => {
+            const type = videoSource.getAttribute('type');
+            if (!sourceMatchesMime(type, MP4_MIME_TYPES)) {
+                return;
             }
+            addMediaUrl(urls, videoSource.getAttribute('src'), baseUrl, isMp4Link);
         });
 
-        // Look for all <video> tags with 'src' attributes directly
-        const videoTags = doc.querySelectorAll('video[src]');
-        videoTags.forEach((videoTag) => {
-            const mp4Url = videoTag.getAttribute('src');
-            if (mp4Url && isMp4Link(mp4Url)) {
-                urls.push(mp4Url);
-            }
+        doc.querySelectorAll('video[src]').forEach((videoTag) => {
+            addMediaUrl(urls, videoTag.getAttribute('src'), baseUrl, isMp4Link);
         });
 
-        // Look for elements with 'data-mp4' or 'data-source' attributes
-        const dataElements = doc.querySelectorAll('[data-mp4], [data-source]');
-        dataElements.forEach((element) => {
+        doc.querySelectorAll('[data-mp4], [data-source]').forEach((element) => {
             const dataUrl = element.getAttribute('data-mp4') || element.getAttribute('data-source');
-            if (dataUrl && isMp4Link(dataUrl)) {
-                urls.push(dataUrl);
-            }
+            addMediaUrl(urls, dataUrl, baseUrl, isMp4Link);
         });
 
-        return urls;
-    }
+        doc.querySelectorAll('a[href], link[href]').forEach((element) => {
+            addMediaUrl(urls, element.getAttribute('href'), baseUrl, isMp4Link);
+        });
+
+        return [...urls];
+    };
 
     /**
      * Handles form submission and fetches HTML content via a CORS proxy.
@@ -142,16 +285,11 @@
         messageEl.textContent = 'Working, please wait...';
 
         try {
-            const response = await fetch(
-                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-                {mode: 'cors'}
-            );
-            const rawResponse = await response.text();
+            const rawResponse = await fetchPageHtml(url);
 
-            // Parse HTML string into a Document
             const parser = new DOMParser();
             const doc = parser.parseFromString(rawResponse, 'text/html');
-            const mediaLinks = findMediaLinks(doc);
+            const mediaLinks = findMediaLinks(doc, rawResponse, url);
 
             messageEl.textContent = '';
             if (mediaLinks.length === 0) {
@@ -170,34 +308,22 @@
                     anchor.target = '_blank';
                     anchor.rel = 'noopener noreferrer';
 
-                    // Extract the file name from the link
                     const fileName = link.substring(link.lastIndexOf('/') + 1);
-
-                    // Determine the file extension
                     const fileExtension = fileName.split('.').pop().toLowerCase();
-
-                    // Create a new `i` element for the icon
                     const icon = document.createElement('i');
 
-                    // Add appropriate Font Awesome icon classes based on the file extension
                     if (fileExtension === 'mp3') {
-                        icon.className = 'fas fa-music';  // Font Awesome music icon
+                        icon.className = 'fas fa-music';
                     } else if (fileExtension === 'mp4') {
-                        icon.className = 'fas fa-video';  // Font Awesome video icon
+                        icon.className = 'fas fa-video';
                     }
 
-                    // Apply additional styles to ensure the icon is visible in the dark theme
                     icon.style.color = '#fff';
                     icon.style.marginRight = '0.5em';
-
-                    // Add the CSS class to increase the size of the list item
                     li.className = 'large-li';
-
-                    // Construct the list item
                     li.appendChild(icon);
                     anchor.textContent = fileName;
                     li.appendChild(anchor);
-
                     ul.appendChild(li);
                 });
 
@@ -217,30 +343,23 @@
         const sharedDescription = currentUrl.searchParams.get('description');
         let sharedLink = currentUrl.searchParams.get('link');
 
-        // If link isn’t directly provided, try to extract from the description
         if (!sharedLink && sharedDescription) {
             sharedLink = extractUrlFromText(sharedDescription);
         }
 
         if (sharedLink) {
             urlField.value = sharedLink;
-            // Optionally, auto-submit if a shared link is provided
             handleFormSubmit(new Event('submit'));
         }
     };
 
-    // Auto select the entire URL on focus for better UX.
     urlField.addEventListener('focus', function () {
         this.select();
     });
 
-    // Register form submit listener.
     searchForm.addEventListener('submit', handleFormSubmit);
-
-    // Process share_target parameters on page load
     document.addEventListener('DOMContentLoaded', handleShareTarget);
 
-    // Service Worker registration for offline support
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
             navigator.serviceWorker
