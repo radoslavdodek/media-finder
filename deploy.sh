@@ -35,10 +35,20 @@ print_ok
 print_step "Syncing application to ${APP_DIR}"
 [[ -d "$SOURCE_DIR" ]] || print_err "Source directory not found: ${SOURCE_DIR}"
 
-rsync -avz --delete \
+RSYNC_OUTPUT="$(mktemp)"
+trap 'rm -f "$RSYNC_OUTPUT"' EXIT
+
+if ! rsync -avz --delete \
   -e "ssh ${SSH_OPTS}" \
+  --rsync-path="sudo rsync" \
   --exclude '.DS_Store' \
-  "${SOURCE_DIR}/" "${SSH_USER}@${SSH_HOST}:${APP_DIR}/"
+  "${SOURCE_DIR}/" "${SSH_USER}@${SSH_HOST}:${APP_DIR}/" \
+  2>&1 | tee "$RSYNC_OUTPUT"; then
+  print_err "rsync failed — see output above"
+fi
+
+FILES_SYNCED="$(grep 'Transfer starting:' "$RSYNC_OUTPUT" | sed -E 's/.*: ([0-9]+) files.*/\1/' || true)"
+FILES_SYNCED="${FILES_SYNCED:-unknown}"
 print_ok
 
 # ---------------------------------------------------------------------------
@@ -60,4 +70,5 @@ echo "  Remote dir: ${APP_DIR}"
 echo "  Source:     ${SOURCE_DIR}/"
 echo "  Started:    ${DEPLOY_STARTED_AT}"
 echo "  Finished:   ${DEPLOY_FINISHED_AT}"
+echo "  Files:      ${FILES_SYNCED} synced"
 echo "  Steps:      connection, rsync sync, nginx reload"
