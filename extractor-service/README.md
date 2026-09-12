@@ -24,10 +24,10 @@ npm test
 npm start
 ```
 
-The service listens on `127.0.0.1:3002` by default.
+The service listens on `127.0.0.1:3006` by default.
 
 ```bash
-curl --request POST http://127.0.0.1:3002/v1/extract \
+curl --request POST http://127.0.0.1:3006/v1/extract \
   --header 'Content-Type: application/json' \
   --data '{"url":"https://example.com/article"}'
 ```
@@ -116,7 +116,7 @@ The default target contains the static extractor without an OS Chromium binary:
 
 ```bash
 docker build --target base -t media-finder-extractor:static .
-docker run --read-only --tmpfs /tmp -p 127.0.0.1:3002:3002 \
+docker run --read-only --tmpfs /tmp -p 127.0.0.1:3006:3006 \
   media-finder-extractor:static
 ```
 
@@ -126,7 +126,7 @@ Build the browser target when Chromium is required:
 docker build --target browser -t media-finder-extractor:browser .
 docker run --read-only --tmpfs /tmp --shm-size=256m \
   --env BROWSER_ALLOWED_HOSTS='dennikn.sk,*.dennikn.sk' \
-  -p 127.0.0.1:3002:3002 media-finder-extractor:browser
+  -p 127.0.0.1:3006:3006 media-finder-extractor:browser
 ```
 
 Apply an outbound firewall to either container. Do not use host networking.

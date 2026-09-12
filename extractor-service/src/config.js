@@ -32,7 +32,7 @@ const list = (name) => (process.env[name] || '')
 
 export const loadConfig = () => ({
     host: process.env.HOST || '127.0.0.1',
-    port: integer('PORT', 3002, {min: 1, max: 65535}),
+    port: integer('PORT', 3006, {min: 1, max: 65535}),
     logLevel: process.env.LOG_LEVEL || 'info',
     allowedOrigins: list('ALLOWED_ORIGINS'),
     trustProxy: boolean('TRUST_PROXY', false),
