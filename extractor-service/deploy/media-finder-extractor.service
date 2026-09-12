@@ -1,0 +1,31 @@
+[Unit]
+Description=Media Finder extraction API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=media-finder
+Group=media-finder
+WorkingDirectory=/opt/media-finder-extractor
+Environment=NODE_ENV=production
+EnvironmentFile=-/etc/media-finder-extractor.env
+ExecStart=/usr/bin/node src/server.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+
+[Install]
+WantedBy=multi-user.target
