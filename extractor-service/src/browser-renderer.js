@@ -30,8 +30,17 @@ export class BrowserRenderer {
         this.semaphore = new Semaphore(config.maxConcurrency);
     }
 
+    availability(url) {
+        const hostAllowed = hostnameMatches(new URL(url).hostname, this.config.allowedHosts);
+        return {
+            enabled: this.config.enabled,
+            hostAllowed,
+            available: this.config.enabled && hostAllowed,
+        };
+    }
+
     canRender(url) {
-        return this.config.enabled && hostnameMatches(new URL(url).hostname, this.config.allowedHosts);
+        return this.availability(url).available;
     }
 
     async getBrowser() {

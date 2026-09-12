@@ -67,9 +67,14 @@ export class ExtractionService {
             throw staticError;
         }
         if (staticWasBlocked) {
+            const browser = this.browserRenderer.availability(normalizedUrl);
             throw new UpstreamError('UPSTREAM_BLOCKED', 'The website blocked the extraction request.', {
                 status: 502,
-                details: {upstreamStatus: fetched.status, browserFallbackEnabled: false},
+                details: {
+                    upstreamStatus: fetched.status,
+                    browserFallbackEnabled: browser.enabled,
+                    browserHostAllowed: browser.hostAllowed,
+                },
             });
         }
         throw new UpstreamError('UPSTREAM_HTTP_ERROR', 'The website returned an unsuccessful response.', {

@@ -16,7 +16,10 @@ test('ExtractionService returns and caches static extraction results', async () 
             challenge: false,
         };
     };
-    const browserRenderer = {canRender: () => false};
+    const browserRenderer = {
+        canRender: () => false,
+        availability: () => ({enabled: false, hostAllowed: true, available: false}),
+    };
     const service = new ExtractionService({config, browserRenderer, logger, fetcher});
 
     const first = await service.extract('https://example.com/article');
@@ -48,8 +51,18 @@ test('ExtractionService uses browser fallback for a challenged response', async 
 
 test('ExtractionService reports a block when browser fallback is unavailable', async () => {
     const fetcher = async () => ({status: 403, finalUrl: 'https://example.com/', body: '', challenge: true});
-    const browserRenderer = {canRender: () => false};
+    const browserRenderer = {
+        canRender: () => false,
+        availability: () => ({enabled: false, hostAllowed: true, available: false}),
+    };
     const service = new ExtractionService({config, browserRenderer, logger, fetcher});
 
-    await assert.rejects(service.extract('https://example.com/'), {code: 'UPSTREAM_BLOCKED'});
+    await assert.rejects(service.extract('https://example.com/'), {
+        code: 'UPSTREAM_BLOCKED',
+        details: {
+            upstreamStatus: 403,
+            browserFallbackEnabled: false,
+            browserHostAllowed: true,
+        },
+    });
 });

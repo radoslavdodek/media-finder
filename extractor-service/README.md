@@ -10,16 +10,18 @@ bypass paywalls, CAPTCHAs, DRM, or publisher access controls.
 
 ## Requirements
 
-- Node.js 20.11 or newer
+- Node.js 20.19 or newer
 - Chromium only when browser fallback is enabled
 
 ## Local setup
 
-Environment variables are read directly from the process; `.env` files are not
-loaded automatically.
+`npm start` loads an optional `.env` file from this directory. Variables already
+present in the process environment take precedence. Docker and systemd continue
+to receive their environment through their normal configuration.
 
 ```bash
 npm ci
+cp .env.example .env
 npm test
 npm start
 ```
