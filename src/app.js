@@ -7,8 +7,13 @@
     const messageEl = document.getElementById('message');
     const resultEl = document.getElementById('result');
 
-    const MP3_MIME_TYPES = new Set(['audio/mp3', 'audio/mpeg', 'audio/mpeg3']);
-    const MP4_MIME_TYPES = new Set(['video/mp4']);
+    const MEDIA_EXTENSIONS = new Map([
+        ['mp3', 'audio'], ['m4a', 'audio'], ['aac', 'audio'], ['ogg', 'audio'],
+        ['oga', 'audio'], ['opus', 'audio'], ['wav', 'audio'], ['flac', 'audio'],
+        ['mp4', 'video'], ['m4v', 'video'], ['webm', 'video'], ['ogv', 'video'],
+        ['mov', 'video'], ['avi', 'video'], ['mkv', 'video'],
+        ['m3u8', 'playlist'], ['mpd', 'playlist'],
+    ]);
 
     /**
      * Clears all child nodes of the target element.
@@ -59,37 +64,50 @@
         }
 
         try {
-            return new URL(cleaned, baseUrl).href;
+            const resolved = new URL(cleaned, baseUrl);
+            return ['http:', 'https:'].includes(resolved.protocol) ? resolved.href : null;
         } catch {
             return null;
         }
     };
 
-    const isMp3Link = (url) => {
+    const getMediaKindFromUrl = (url) => {
         try {
-            return new URL(url).pathname.toLowerCase().endsWith('.mp3');
+            const path = new URL(url).pathname;
+            const extension = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
+            return MEDIA_EXTENSIONS.get(extension) || null;
         } catch {
-            return false;
+            return null;
         }
     };
 
-    const isMp4Link = (url) => {
-        try {
-            return new URL(url).pathname.toLowerCase().endsWith('.mp4');
-        } catch {
-            return false;
+    const getMediaKindFromMime = (type) => {
+        const mime = type?.split(';', 1)[0].trim().toLowerCase();
+        if (!mime) {
+            return null;
         }
+        if (mime.startsWith('audio/')) {
+            return 'audio';
+        }
+        if (mime.startsWith('video/')) {
+            return 'video';
+        }
+        if (['application/vnd.apple.mpegurl', 'application/x-mpegurl', 'application/dash+xml'].includes(mime)) {
+            return 'playlist';
+        }
+        return null;
     };
 
     /**
      * @param {Set<string>} urls
      * @param {string|null} candidate
      * @param {string} baseUrl
-     * @param {(url: string) => boolean} matcher
+     * @param {{kind?: string|null, mimeType?: string|null}} [evidence]
      */
-    const addMediaUrl = (urls, candidate, baseUrl, matcher) => {
+    const addMediaUrl = (urls, candidate, baseUrl, evidence = {}) => {
         const resolved = resolveMediaUrl(candidate, baseUrl);
-        if (resolved && matcher(resolved)) {
+        const kind = evidence.kind || getMediaKindFromMime(evidence.mimeType) || (resolved && getMediaKindFromUrl(resolved));
+        if (resolved && kind) {
             urls.add(resolved);
         }
     };
@@ -108,7 +126,7 @@
             return false;
         }
 
-        return /<!doctype html|<html[\s>]|<body[\s>]|<audio[\s>]|<video[\s>]/i.test(trimmed);
+        return /<[a-z][\w:-]*(?:\s[^>]*)?>/i.test(trimmed);
     };
 
     /**
@@ -179,21 +197,58 @@
     };
 
     /**
-     * Finds direct media URLs embedded in raw HTML or script content.
+     * Finds direct media URLs embedded in raw HTML or script content. Script URLs
+     * are commonly JSON-escaped, so normalize only the escape forms used in URLs.
      * @param {string} rawHtml
      * @param {string} baseUrl
      * @returns {Set<string>}
      */
     const findMediaLinksInText = (rawHtml, baseUrl) => {
         const urls = new Set();
-        const patterns = [
-            {regex: /https?:\/\/[^\s"'<>\\]+\.mp3\b/gi, matcher: isMp3Link},
-            {regex: /https?:\/\/[^\s"'<>\\]+\.mp4\b/gi, matcher: isMp4Link},
-        ];
+        const normalized = rawHtml
+            .replace(/\\u([0-9a-f]{4})/gi, (_, code) => String.fromCharCode(Number.parseInt(code, 16)))
+            .replace(/\\\//g, '/');
+        const urlPattern = /(?:https?:)?\/\/[^\s"'<>\\]+|(?:\/|\.\.?\/)[^\s"'<>\\]+/gi;
 
-        patterns.forEach(({regex, matcher}) => {
-            const matches = rawHtml.match(regex) || [];
-            matches.forEach((match) => addMediaUrl(urls, match, baseUrl, matcher));
+        (normalized.match(urlPattern) || []).forEach((match) => addMediaUrl(urls, match, baseUrl));
+
+        return urls;
+    };
+
+    const getDocumentBaseUrl = (doc, pageUrl) => {
+        const baseHref = doc.querySelector('base[href]')?.getAttribute('href');
+        return resolveMediaUrl(baseHref, pageUrl) || pageUrl;
+    };
+
+    const findStructuredMediaLinks = (doc, baseUrl) => {
+        const urls = new Set();
+        const mediaFields = new Set(['contenturl', 'embedurl', 'mediaurl', 'src', 'file', 'source']);
+
+        const visit = (value, inheritedMime = null) => {
+            if (Array.isArray(value)) {
+                value.forEach((item) => visit(item, inheritedMime));
+                return;
+            }
+            if (!value || typeof value !== 'object') {
+                return;
+            }
+
+            const mimeType = value.encodingFormat || value.mimeType || value.type || inheritedMime;
+            Object.entries(value).forEach(([key, child]) => {
+                if (typeof child === 'string' && mediaFields.has(key.toLowerCase())) {
+                    addMediaUrl(urls, child, baseUrl, {mimeType});
+                } else {
+                    visit(child, mimeType);
+                }
+            });
+        };
+
+        doc.querySelectorAll('script[type="application/ld+json"], script[type="application/json"]').forEach((script) => {
+            try {
+                visit(JSON.parse(script.textContent));
+            } catch {
+                // Other raw script scanning still handles non-JSON script payloads.
+            }
         });
 
         return urls;
@@ -209,73 +264,79 @@
     const findMediaLinks = (doc, rawHtml, baseUrl) => {
         const urls = new Set();
 
-        findMp3Links(doc, baseUrl).forEach((url) => urls.add(url));
-        findMp4Links(doc, baseUrl).forEach((url) => urls.add(url));
-        findMediaLinksInText(rawHtml, baseUrl).forEach((url) => urls.add(url));
+        const documentBaseUrl = getDocumentBaseUrl(doc, baseUrl);
+
+        findAudioLinks(doc, documentBaseUrl).forEach((url) => urls.add(url));
+        findVideoLinks(doc, documentBaseUrl).forEach((url) => urls.add(url));
+        findStructuredMediaLinks(doc, documentBaseUrl).forEach((url) => urls.add(url));
+        findMediaLinksInText(rawHtml, documentBaseUrl).forEach((url) => urls.add(url));
 
         return [...urls];
     };
 
-    const sourceMatchesMime = (type, allowedTypes) => {
-        if (!type) {
-            return true;
-        }
-        return allowedTypes.has(type.trim().toLowerCase());
-    };
-
-    const findMp3Links = (doc, baseUrl) => {
+    const findAudioLinks = (doc, baseUrl) => {
         const urls = new Set();
 
         doc.querySelectorAll('audio source[src]').forEach((audioSource) => {
             const type = audioSource.getAttribute('type');
-            if (!sourceMatchesMime(type, MP3_MIME_TYPES)) {
-                return;
-            }
-            addMediaUrl(urls, audioSource.getAttribute('src'), baseUrl, isMp3Link);
+            addMediaUrl(urls, audioSource.getAttribute('src'), baseUrl, {kind: getMediaKindFromMime(type) || 'audio'});
         });
 
         doc.querySelectorAll('audio[src]').forEach((audioTag) => {
-            addMediaUrl(urls, audioTag.getAttribute('src'), baseUrl, isMp3Link);
+            addMediaUrl(urls, audioTag.getAttribute('src'), baseUrl, {kind: 'audio'});
         });
 
         doc.querySelectorAll('audio[data-append]').forEach((audioTag) => {
-            addMediaUrl(urls, audioTag.getAttribute('data-append'), baseUrl, isMp3Link);
+            addMediaUrl(urls, audioTag.getAttribute('data-append'), baseUrl, {kind: 'audio'});
         });
 
         doc.querySelectorAll('[data-mp3], [data-source]').forEach((element) => {
+            const isNamedAudioSource = element.hasAttribute('data-mp3');
             const dataUrl = element.getAttribute('data-mp3') || element.getAttribute('data-source');
-            addMediaUrl(urls, dataUrl, baseUrl, isMp3Link);
+            addMediaUrl(urls, dataUrl, baseUrl, {
+                kind: isNamedAudioSource ? 'audio' : null,
+                mimeType: element.getAttribute('data-type') || element.getAttribute('type'),
+            });
         });
 
         doc.querySelectorAll('a[href], link[href]').forEach((element) => {
-            addMediaUrl(urls, element.getAttribute('href'), baseUrl, isMp3Link);
+            addMediaUrl(urls, element.getAttribute('href'), baseUrl, {mimeType: element.getAttribute('type')});
         });
 
         return [...urls];
     };
 
-    const findMp4Links = (doc, baseUrl) => {
+    const findVideoLinks = (doc, baseUrl) => {
         const urls = new Set();
 
         doc.querySelectorAll('video source[src]').forEach((videoSource) => {
             const type = videoSource.getAttribute('type');
-            if (!sourceMatchesMime(type, MP4_MIME_TYPES)) {
-                return;
-            }
-            addMediaUrl(urls, videoSource.getAttribute('src'), baseUrl, isMp4Link);
+            addMediaUrl(urls, videoSource.getAttribute('src'), baseUrl, {kind: getMediaKindFromMime(type) || 'video'});
         });
 
         doc.querySelectorAll('video[src]').forEach((videoTag) => {
-            addMediaUrl(urls, videoTag.getAttribute('src'), baseUrl, isMp4Link);
+            addMediaUrl(urls, videoTag.getAttribute('src'), baseUrl, {kind: 'video'});
         });
 
         doc.querySelectorAll('[data-mp4], [data-source]').forEach((element) => {
+            const isNamedVideoSource = element.hasAttribute('data-mp4');
             const dataUrl = element.getAttribute('data-mp4') || element.getAttribute('data-source');
-            addMediaUrl(urls, dataUrl, baseUrl, isMp4Link);
+            addMediaUrl(urls, dataUrl, baseUrl, {
+                kind: isNamedVideoSource ? 'video' : null,
+                mimeType: element.getAttribute('data-type') || element.getAttribute('type'),
+            });
         });
 
         doc.querySelectorAll('a[href], link[href]').forEach((element) => {
-            addMediaUrl(urls, element.getAttribute('href'), baseUrl, isMp4Link);
+            addMediaUrl(urls, element.getAttribute('href'), baseUrl, {mimeType: element.getAttribute('type')});
+        });
+
+        doc.querySelectorAll('meta[property^="og:video"], meta[name^="twitter:player:stream"]').forEach((meta) => {
+            addMediaUrl(urls, meta.getAttribute('content'), baseUrl, {kind: 'video'});
+        });
+
+        doc.querySelectorAll('meta[property^="og:audio"], meta[name^="twitter:audio"]').forEach((meta) => {
+            addMediaUrl(urls, meta.getAttribute('content'), baseUrl, {kind: 'audio'});
         });
 
         return [...urls];
@@ -307,7 +368,7 @@
 
             messageEl.textContent = '';
             if (mediaLinks.length === 0) {
-                resultEl.textContent = 'No media links found on that page.';
+                resultEl.textContent = 'No static media URLs found. Media requested only after JavaScript runs cannot be inspected by this version.';
             } else {
                 const subtitle = document.createElement('div');
                 subtitle.innerHTML = '<strong>Media links found:</strong>';
