@@ -92,6 +92,10 @@ export const extractMedia = ({html, pageUrl, networkResponses = []}) => {
     const found = collector(documentBase);
 
     $('audio[src]').each((_index, element) => found.add($(element).attr('src'), {kind: 'audio', source: 'audio[src]'}));
+    $('audio[data-append]').each((_index, element) => found.add($(element).attr('data-append'), {
+        kind: 'audio',
+        source: 'audio[data-append]',
+    }));
     $('audio source[src]').each((_index, element) => found.add($(element).attr('src'), {
         kind: kindFromMime($(element).attr('type')) || 'audio',
         source: 'audio source[src]',

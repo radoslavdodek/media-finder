@@ -14,6 +14,7 @@ test('extractMedia combines DOM, metadata, structured data, scripts, and network
             </head>
             <body>
                 <audio src="audio/theme.m4a"></audio>
+                <audio data-append="audio/legacy.mp3"></audio>
                 <video><source src="movie.webm" type="video/webm"></video>
                 <div data-mp3="https:\/\/media.example.net\/escaped.mp3"></div>
                 <script>window.stream = "https:\/\/stream.example.net\/live.m3u8";</script>
@@ -28,6 +29,7 @@ test('extractMedia combines DOM, metadata, structured data, scripts, and network
     const byUrl = new Map(media.map((item) => [item.url, item]));
 
     assert.equal(byUrl.get('https://cdn.example.com/assets/audio/theme.m4a').kind, 'audio');
+    assert.equal(byUrl.get('https://cdn.example.com/assets/audio/legacy.mp3').kind, 'audio');
     assert.equal(byUrl.get('https://cdn.example.com/assets/movie.webm').kind, 'video');
     assert.equal(byUrl.get('https://media.example.net/escaped.mp3').kind, 'audio');
     assert.equal(byUrl.get('https://stream.example.net/live.m3u8').kind, 'playlist');
