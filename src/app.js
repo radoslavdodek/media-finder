@@ -142,7 +142,9 @@
                 name: 'same-origin',
                 buildUrl: () => {
                     const proxyUrl = new URL('proxy', appScriptUrl);
-                    proxyUrl.searchParams.set('url', pageUrl);
+                    // Nginx's $arg_url is not percent-decoded before proxy_pass.
+                    // Keep the target URL readable so its scheme can be proxied.
+                    proxyUrl.search = `url=${pageUrl}`;
                     return proxyUrl.href;
                 },
                 parseResponse: (text) => text,
@@ -401,7 +403,7 @@
                 resultEl.appendChild(ul);
             }
         } catch (error) {
-            messageEl.textContent = 'ERROR: Could not fetch or parse. Check the console.';
+            messageEl.textContent = 'Could not fetch the page. The website may block automated requests or require a browser challenge.';
             console.error('Error processing URL:', error);
         }
     };
