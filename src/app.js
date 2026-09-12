@@ -136,19 +136,15 @@
      */
     const fetchPageHtml = async (pageUrl) => {
         const encodedUrl = encodeURIComponent(pageUrl);
+        const appScriptUrl = document.querySelector('script[src$="app.js"]')?.src || window.location.href;
         const proxies = [
             {
                 name: 'same-origin',
                 buildUrl: () => {
-                    const proxyUrl = new URL('proxy', window.location.href);
-                    proxyUrl.search = `url=${pageUrl}`;
+                    const proxyUrl = new URL('proxy', appScriptUrl);
+                    proxyUrl.searchParams.set('url', pageUrl);
                     return proxyUrl.href;
                 },
-                parseResponse: (text) => text,
-            },
-            {
-                name: 'corsproxy.io',
-                buildUrl: () => `https://corsproxy.io/?url=${encodedUrl}`,
                 parseResponse: (text) => text,
             },
             {
