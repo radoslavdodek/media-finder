@@ -48,6 +48,7 @@ export const loadConfig = () => ({
         enabled: boolean('BROWSER_ENABLED', false),
         executablePath: process.env.BROWSER_EXECUTABLE_PATH || '',
         timeoutMs: integer('BROWSER_TIMEOUT_MS', 25_000, {min: 1000, max: 120_000}),
+        challengeWaitMs: integer('BROWSER_CHALLENGE_WAIT_MS', 12_000, {min: 0, max: 60_000}),
         maxConcurrency: integer('BROWSER_MAX_CONCURRENCY', 2, {min: 1, max: 20}),
         proxyServer: process.env.BROWSER_PROXY_SERVER || '',
         proxyUsername: process.env.BROWSER_PROXY_USERNAME || '',

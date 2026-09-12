@@ -81,6 +81,8 @@ Important settings:
 - `MAX_RESPONSE_BYTES`, `REQUEST_TIMEOUT_MS`, and `MAX_REDIRECTS`: outbound
   resource limits.
 - `BROWSER_ENABLED`: enables the Playwright/Chromium fallback.
+- `BROWSER_CHALLENGE_WAIT_MS`: how long Chromium may wait for a non-interactive
+  JavaScript challenge to complete before reporting the page as blocked.
 - `BROWSER_ALLOWED_HOSTS`: optional exact or wildcard host allowlist, for
   example `dennikn.sk,*.dennikn.sk`.
 - `BROWSER_PROXY_SERVER`: optional browser egress proxy URL. Username and

@@ -1,6 +1,11 @@
 import {UpstreamError} from './errors.js';
 import {hostnameMatches, validateAndResolveUrl} from './network-policy.js';
 
+const challengeHtmlPattern = /<title>\s*just a moment(?:\.\.\.)?\s*<\/title>|window\._cf_chl_opt|cdn-cgi\/challenge-platform|id=["']challenge-error-text/i;
+
+export const isBrowserChallenge = ({status, headers = {}, html = ''}) => challengeHtmlPattern.test(html)
+    || (status === 403 && String(headers['cf-mitigated'] || '').toLowerCase() === 'challenge');
+
 class Semaphore {
     constructor(maximum) {
         this.maximum = maximum;
@@ -94,11 +99,15 @@ export class BrowserRenderer {
             const page = await context.newPage();
             const networkResponses = [];
             const validatedHosts = new Map();
+            let mainDocumentResponse;
 
             page.on('response', (response) => {
                 const headers = response.headers();
                 const responseUrl = response.url();
                 const mimeType = headers['content-type'] || '';
+                if (response.request().isNavigationRequest() && response.frame() === page.mainFrame()) {
+                    mainDocumentResponse = response;
+                }
                 const looksLikeMedia = /^(?:audio|video)\//i.test(mimeType)
                     || /(?:mpegurl|dash\+xml)/i.test(mimeType)
                     || /\.(?:mp3|m4a|aac|ogg|oga|opus|wav|flac|mp4|m4v|webm|ogv|mov|avi|mkv|m3u8|mpd)(?:[?#]|$)/i.test(responseUrl);
@@ -133,15 +142,40 @@ export class BrowserRenderer {
                     waitUntil: 'domcontentloaded',
                     timeout: this.config.timeoutMs,
                 });
-                await page.waitForLoadState('networkidle', {timeout: Math.min(5000, this.config.timeoutMs)}).catch(() => {});
+                mainDocumentResponse ||= response;
+                const initialHtml = await page.content();
+                const initialResponse = {
+                    status: mainDocumentResponse?.status() || 0,
+                    headers: mainDocumentResponse?.headers() || {},
+                    html: initialHtml,
+                };
+
+                if (isBrowserChallenge(initialResponse) && this.config.challengeWaitMs > 0) {
+                    this.logger.info('Waiting for browser challenge to complete', {
+                        hostname: url.hostname,
+                        waitMs: this.config.challengeWaitMs,
+                    });
+                    await page.waitForFunction(() => {
+                        const title = document.title.trim().toLowerCase();
+                        const challengeScript = document.querySelector('script[src*="/cdn-cgi/challenge-platform"]');
+                        const challengeError = document.getElementById('challenge-error-text');
+                        return title !== 'just a moment...' && title !== 'just a moment'
+                            && !challengeScript
+                            && !challengeError;
+                    }, undefined, {timeout: Math.min(this.config.challengeWaitMs, this.config.timeoutMs)}).catch(() => {});
+                    await page.waitForLoadState('domcontentloaded', {
+                        timeout: Math.min(3000, this.config.timeoutMs),
+                    }).catch(() => {});
+                } else {
+                    await page.waitForLoadState('networkidle', {
+                        timeout: Math.min(5000, this.config.timeoutMs),
+                    }).catch(() => {});
+                }
+
                 const html = await page.content();
-                const status = response?.status() || 0;
-                const headers = response?.headers() || {};
-                const challenged = status === 403 && (
-                    String(headers['cf-mitigated'] || '').toLowerCase() === 'challenge'
-                    || /<title>\s*just a moment(?:\.\.\.)?\s*<\/title>/i.test(html)
-                );
-                if (challenged) {
+                const status = mainDocumentResponse?.status() || 0;
+                const headers = mainDocumentResponse?.headers() || {};
+                if (isBrowserChallenge({status, headers, html})) {
                     throw new UpstreamError('UPSTREAM_BLOCKED', 'The website presented a browser challenge.', {
                         status: 502,
                         details: {upstreamStatus: status},
